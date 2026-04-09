@@ -1,0 +1,71 @@
+import sqlite3
+import tkinter as tk
+from tkinter import ttk, messagebox
+import matplotlib.pyplot as plt
+
+# ============================================================
+#                    Conexão com o banco de dados
+# ============================================================
+
+conexao = sqlite3.connect("pagamentos.db")
+cursor = conexao.cursor()
+
+# ============================================================
+#                    CONSTRUÇÃO DE ABAS
+# ============================================================
+
+janela = tk.Tk()
+janela.title("Controle de Pagamentos")
+
+abas = ttk.Notebook(janela)
+abas.pack(expand=True, fill="both")
+
+# Aba Cadastro
+aba_cadastro = tk.Frame(abas)
+abas.add(aba_cadastro, text="Cadastro")
+
+tk.Label(aba_cadastro, text="Nome:").grid(row=0, column=0)
+entrada_nome = tk.Entry(aba_cadastro)
+entrada_nome.grid(row=0, column=1)
+
+tk.Label(aba_cadastro, text="CPF:").grid(row=1, column=0)
+entrada_cpf = tk.Entry(aba_cadastro)
+entrada_cpf.grid(row=1, column=1)
+
+tk.Label(aba_cadastro, text="Placa:").grid(row=2, column=0)
+entrada_placa = tk.Entry(aba_cadastro)
+entrada_placa.grid(row=2, column=1)
+
+tk.Button(aba_cadastro, text="Cadastrar" ).grid(row=6, column=0, columnspan=2)
+
+
+# Aba De Movimentacoes
+aba_movimentacoes = tk.Frame(abas)
+abas.add(aba_movimentacoes, text="Movimentações")
+
+tk.Label(aba_movimentacoes, text="Placa").grid(row=0, column=0)
+entrada_placa = tk.Entry(aba_movimentacoes)
+entrada_placa.grid(row=0, column=1)
+
+tk.Label(aba_movimentacoes, text="Data:").grid(row=1, column=0)
+entrada_data = tk.Entry(aba_movimentacoes)
+entrada_data.grid(row=1, column=1)
+
+tk.Label(aba_movimentacoes, text="Hora De Entrada:").grid(row=2, column=0)
+entrada_he = tk.Entry(aba_movimentacoes)
+entrada_he.grid(row=2, column=1)
+
+tk.Label(aba_movimentacoes, text="Hora De Saida:").grid(row=3, column=0)
+entrada_he = tk.Entry(aba_movimentacoes)
+entrada_he.grid(row=3, column=1)
+
+
+
+tk.Button(aba_movimentacoes, text="Cadastrar" ).grid(row=6, column=0, columnspan=2)
+
+# ============================================================
+#                    Iniciar programa
+# ============================================================
+
+janela.mainloop()
+conexao.close()
