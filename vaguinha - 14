@@ -1,0 +1,352 @@
+import sqlite3
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from datetime import datetime
+from fpdf import FPDF
+
+# ============================================================
+# BANCO
+# ============================================================
+
+conexao = sqlite3.connect("pagamentos.db")
+cursor = conexao.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT,
+    cpf TEXT,
+    placa TEXT UNIQUE
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS movimentacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    placa TEXT,
+    entrada TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS pagamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    placa TEXT,
+    entrada TEXT,
+    saida TEXT,
+    valor REAL
+)
+""")
+
+conexao.commit()
+
+# ============================================================
+# FILTRO
+# ============================================================
+
+filtro_atual = "todos"
+
+# ============================================================
+# FUNÇÕES
+# ============================================================
+
+def cadastrar_cliente():
+    nome = e_nome.get().strip()
+    cpf = e_cpf.get().strip()
+    placa = e_placa_cad.get().strip().upper()
+
+    if not nome or not cpf or not placa:
+        messagebox.showerror("Erro", "Preencha todos os campos")
+        return
+
+    try:
+        cursor.execute(
+            "INSERT INTO clientes (nome, cpf, placa) VALUES (?, ?, ?)",
+            (nome, cpf, placa)
+        )
+        conexao.commit()
+        messagebox.showinfo("OK", "Cliente cadastrado com sucesso!")
+
+    except sqlite3.IntegrityError:
+        messagebox.showerror("Erro", "Esta placa já está cadastrada")
+
+
+def registrar_entrada():
+    placa = e_placa_mov.get().strip().upper()
+
+    if not placa:
+        messagebox.showerror("Erro", "Informe a placa")
+        return
+
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute(
+        "INSERT INTO movimentacoes (placa, entrada) VALUES (?, ?)",
+        (placa, agora)
+    )
+    conexao.commit()
+
+    atualizar_tabela()
+
+
+def registrar_saida():
+    placa = e_placa_pag.get().strip().upper()
+
+    cursor.execute("""
+        SELECT id, entrada FROM movimentacoes
+        WHERE placa = ?
+        ORDER BY id DESC LIMIT 1
+    """, (placa,))
+
+    dados = cursor.fetchone()
+
+    if not dados:
+        messagebox.showerror("Erro", "Sem entrada registrada")
+        return
+
+    mov_id, entrada = dados
+    saida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    fmt = "%Y-%m-%d %H:%M:%S"
+    tempo = (datetime.strptime(saida, fmt) - datetime.strptime(entrada, fmt)).seconds / 3600
+    valor = round(tempo * 5, 2)
+
+    cursor.execute("""
+        INSERT INTO pagamentos (placa, entrada, saida, valor)
+        VALUES (?, ?, ?, ?)
+    """, (placa, entrada, saida, valor))
+
+    cursor.execute("DELETE FROM movimentacoes WHERE id = ?", (mov_id,))
+    conexao.commit()
+
+    atualizar_tabela()
+
+# ============================================================
+# PAINEL
+# ============================================================
+
+def set_filtro(tipo):
+    global filtro_atual
+    filtro_atual = tipo
+    atualizar_tabela()
+
+
+def atualizar_tabela():
+    for i in tabela.get_children():
+        tabela.delete(i)
+
+    if filtro_atual == "ativos":
+        cursor.execute("SELECT id, placa, entrada FROM movimentacoes")
+        for r in cursor.fetchall():
+            tabela.insert("", "end", values=(r[0], r[1], r[2], "-", "-"))
+
+    elif filtro_atual == "pagos":
+        cursor.execute("SELECT id, placa, entrada, saida, valor FROM pagamentos")
+        for r in cursor.fetchall():
+            tabela.insert("", "end", values=r)
+
+    else:
+        cursor.execute("SELECT id, placa, entrada FROM movimentacoes")
+        for r in cursor.fetchall():
+            tabela.insert("", "end", values=(r[0], r[1], r[2], "-", "-"))
+
+        cursor.execute("SELECT id, placa, entrada, saida, valor FROM pagamentos")
+        for r in cursor.fetchall():
+            tabela.insert("", "end", values=r)
+
+# ============================================================
+# EDITAR / EXCLUIR
+# ============================================================
+
+def abrir_edicao():
+    item = tabela.focus()
+
+    if not item:
+        messagebox.showerror("Erro", "Selecione um registro")
+        return
+
+    valores = tabela.item(item, "values")
+
+    janela_edit = tk.Toplevel(janela)
+    janela_edit.title("Editar Registro")
+    janela_edit.geometry("350x300")
+
+    tk.Label(janela_edit, text="Placa").pack()
+    e1 = tk.Entry(janela_edit)
+    e1.insert(0, valores[1])
+    e1.pack()
+
+    tk.Label(janela_edit, text="Entrada").pack()
+    e2 = tk.Entry(janela_edit)
+    e2.insert(0, valores[2])
+    e2.pack()
+
+    tk.Label(janela_edit, text="Saída").pack()
+    e3 = tk.Entry(janela_edit)
+    e3.insert(0, valores[3])
+    e3.pack()
+
+    tk.Label(janela_edit, text="Valor").pack()
+    e4 = tk.Entry(janela_edit)
+    e4.insert(0, valores[4])
+    e4.pack()
+
+    def salvar():
+        try:
+            cursor.execute("""
+                UPDATE pagamentos
+                SET placa=?, entrada=?, saida=?, valor=?
+                WHERE id=?
+            """, (e1.get(), e2.get(), e3.get(), e4.get(), valores[0]))
+
+            conexao.commit()
+            atualizar_tabela()
+            janela_edit.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Erro", str(e))
+
+    def deletar():
+        cursor.execute("DELETE FROM pagamentos WHERE id=?", (valores[0],))
+        conexao.commit()
+        atualizar_tabela()
+        janela_edit.destroy()
+
+    tk.Button(janela_edit, text="Salvar", command=salvar).pack(pady=5)
+    tk.Button(janela_edit, text="Excluir", command=deletar).pack(pady=5)
+
+# ============================================================
+# PDF
+# ============================================================
+
+def gerar_relatorio():
+    caminho = filedialog.asksaveasfilename(
+        defaultextension=".pdf",
+        filetypes=[("PDF", "*.pdf")],
+        title="Salvar relatório"
+    )
+
+    if not caminho:
+        return
+
+    cursor.execute("""
+        SELECT placa, entrada, saida, valor
+        FROM pagamentos
+        WHERE date(saida) = date('now')
+    """)
+
+    dados = cursor.fetchall()
+
+    if not dados:
+        messagebox.showerror("Erro", "Sem dados hoje")
+        return
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 12)
+
+    pdf.cell(200, 10, "RELATÓRIO DO DIA", ln=True, align="C")
+    pdf.ln(10)
+
+    total = 0
+
+    for d in dados:
+        pdf.cell(200, 10, f"{d[0]} | {d[1]} | {d[2]} | R$ {d[3]}", ln=True)
+        total += d[3]
+
+    pdf.ln(10)
+    pdf.cell(200, 10, f"TOTAL: R$ {total}", ln=True)
+
+    pdf.output(caminho)
+
+    messagebox.showinfo("OK", "PDF gerado com sucesso!")
+
+# ============================================================
+# INTERFACE
+# ============================================================
+
+janela = tk.Tk()
+janela.title("Sistema Estacionamento")
+janela.geometry("900x650")
+
+abas = ttk.Notebook(janela)
+abas.pack(expand=True, fill="both")
+
+# ---------------- CADASTRO ----------------
+aba1 = tk.Frame(abas)
+abas.add(aba1, text="Cadastro")
+
+tk.Label(aba1, text="Nome").pack()
+e_nome = tk.Entry(aba1)
+e_nome.pack()
+
+tk.Label(aba1, text="CPF").pack()
+e_cpf = tk.Entry(aba1)
+e_cpf.pack()
+
+tk.Label(aba1, text="Placa").pack()
+e_placa_cad = tk.Entry(aba1)
+e_placa_cad.pack()
+
+tk.Button(aba1, text="Cadastrar", command=cadastrar_cliente).pack()
+
+# ---------------- ENTRADA ----------------
+aba2 = tk.Frame(abas)
+abas.add(aba2, text="Entrada")
+
+tk.Label(aba2, text="Placa").pack()
+e_placa_mov = tk.Entry(aba2)
+e_placa_mov.pack()
+
+tk.Button(aba2, text="Registrar Entrada", command=registrar_entrada).pack()
+
+# ---------------- SAÍDA ----------------
+aba3 = tk.Frame(abas)
+abas.add(aba3, text="Saída")
+
+tk.Label(aba3, text="Placa").pack()
+e_placa_pag = tk.Entry(aba3)
+e_placa_pag.pack()
+
+tk.Button(aba3, text="Registrar Saída", command=registrar_saida).pack()
+
+# ---------------- PAINEL ----------------
+aba4 = tk.Frame(abas)
+abas.add(aba4, text="Painel")
+
+frame_btn = tk.Frame(aba4)
+frame_btn.pack()
+
+tk.Button(frame_btn, text="Editar", command=abrir_edicao).pack(side="left", padx=10)
+tk.Button(frame_btn, text="Todos", command=lambda: set_filtro("todos")).pack(side="left", padx=5)
+tk.Button(frame_btn, text="Ativos", command=lambda: set_filtro("ativos")).pack(side="left", padx=5)
+tk.Button(frame_btn, text="Pagos", command=lambda: set_filtro("pagos")).pack(side="left", padx=5)
+
+frame_table = tk.Frame(aba4)
+frame_table.pack(expand=True, fill="both")
+
+tabela = ttk.Treeview(
+    frame_table,
+    columns=("ID", "Placa", "Entrada", "Saida", "Valor"),
+    show="headings"
+)
+
+for c in ("ID", "Placa", "Entrada", "Saida", "Valor"):
+    tabela.heading(c, text=c)
+
+tabela.pack(expand=True, fill="both")
+
+# ---------------- RELATÓRIO ----------------
+aba5 = tk.Frame(abas)
+abas.add(aba5, text="Relatório")
+
+tk.Button(aba5, text="Gerar PDF", command=gerar_relatorio).pack(pady=20)
+
+# ============================================================
+# START
+# ============================================================
+
+atualizar_tabela()
+janela.mainloop()
+
+conexao.close()
